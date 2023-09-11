@@ -1,0 +1,392 @@
+ ______   ______     ______     __    __     ______     __   __        ______   ______     ______     ______   ______     ______     ______     __        
+/\  == \ /\  __ \   /\  ___\   /\ "-./  \   /\  __ \   /\ "-.\ \      /\  == \ /\  == \   /\  __ \   /\__  _\ /\  __ \   /\  ___\   /\  __ \   /\ \       
+\ \  _-/ \ \  __ \  \ \ \____  \ \ \-./\ \  \ \  __ \  \ \ \-.  \     \ \  _-/ \ \  __<   \ \ \/\ \  \/_/\ \/ \ \ \/\ \  \ \ \____  \ \ \/\ \  \ \ \____  
+ \ \_\    \ \_\ \_\  \ \_____\  \ \_\ \ \_\  \ \_\ \_\  \ \_\\"\_\     \ \_\    \ \_\ \_\  \ \_____\    \ \_\  \ \_____\  \ \_____\  \ \_____\  \ \_____\ 
+  \/_/     \/_/\/_/   \/_____/   \/_/  \/_/   \/_/\/_/   \/_/ \/_/      \/_/     \/_/ /_/   \/_____/     \/_/   \/_____/   \/_____/   \/_____/   \/_____/ 
+                                                                                                                                                          
+                 ______     ______   ______     ______     __     ______   __     ______     ______     ______   __     ______     __   __    
+                /\  ___\   /\  == \ /\  ___\   /\  ___\   /\ \   /\  ___\ /\ \   /\  ___\   /\  __ \   /\__  _\ /\ \   /\  __ \   /\ "-.\ \   
+                \ \___  \  \ \  _-/ \ \  __\   \ \ \____  \ \ \  \ \  __\ \ \ \  \ \ \____  \ \  __ \  \/_/\ \/ \ \ \  \ \ \/\ \  \ \ \-.  \  
+                 \/\_____\  \ \_\    \ \_____\  \ \_____\  \ \_\  \ \_\    \ \_\  \ \_____\  \ \_\ \_\    \ \_\  \ \_\  \ \_____\  \ \_\\"\_\ 
+                  \/_____/   \/_/     \/_____/   \/_____/   \/_/   \/_/     \/_/   \/_____/   \/_/\/_/     \/_/   \/_/   \/_____/   \/_/ \/_/ 
+                                                                                                              
+       𝓢𝓽𝓾𝓭𝓮𝓷𝓽 𝓝𝓾𝓶𝓫𝓮𝓻 ~ 22004061
+꧁༺ =============================== ༻꧂
+
+This technical specification is for a network protocol that is used to communicate between two computers of a multi-player networked Pacman game.
+
+The game allows you to compete with other players for food and to try and tempt the ghosts to attack them.
+
+If your Pacman goes down the tunnel, it will disappear from your screen and reappear on your opponent’s screen but is still controlled by you and can eat the food, eat the powerpills, eat frightened ghosts, and die as it's a network where each user has their own pacman data and applications stored locally.
+
+The document specifies the method of communication between the nodes, what messages are sent, what's required to send them, and how frequently they are transferred.
+
+
+Your pacman’s interactions with its environment are always modelled on your computer, even when it is visiting the remote screen. This allows fast interaction between keypresses and motion in the model, which is necessary to turn corners precisely. The display of your pacman on the remote screen may lag slightly if the network is not performing well. Your pacman is always shown in yellow, whereas your opponents is always pink.
+Ghosts’s motion and strategy are always modelled on their home computer. Ghosts cannot traverse the tunnels and visit the remote screen.
+
+When our pacman is AWAY, the local model needs to know about everything it can interact with. At game start or restart, each computer sends the other a copy of its maze. The game ships with three different mazes, though more can be added. As the maze is sent over the network to the other player, it is fine if the mazes stored on each computer are different. A player can choose a maze by selecting ”-m <mazenum>” on the command line, where mazenum is an integer, typically from 0 to 2. If no maze is specified, it is selected randomly. The maze that is sent includes the location of all the food and powerpills.
+The model running on your computer keeps two mazes in memory - the LOCAL one and the REMOTE one.
+To keep the copies of the maze running on your computer and the remote computer synchronized, each computer continuously informs the other of actions. The actions include the pacman moving (position, direction and speed), the LOCAL ghosts moving, ghosts changing state, eating food or powerpills, ghosts getting eaten, and the player dying.
+On receipt of these messages from the remote computer, the local computer updates the relevant maze - this might be the local maze if the other pacman is currently FOREIGN (ie it is visiting our maze), or it might be the remote maze if the other pacman is REMOTE.
+When our pacman visits the remote screen, it becomes AWAY. Our computer first sends a “pacman arrived” message, so the remote computer can initialise any state. Whenever our pacman moves, our computer sends “pacman update” messages to the remote computer, giving the current position, direction and speed of our pacman. It does this irrespective of whether the pacman is LOCAL or AWAY.
+Whenever our LOCAL or AWAY pacman eats food or powerpills, this is detected by the model running on our own computer, using its copy of the LOCAL or REMOTE maze as appropriate. Our computer then sends an “eat” update message to the remote computer informing it that food or a powerpill has been eaten. Thus, even when our pacman is AWAY, interactions between it and food are still handled by the local model.
+Our computer also sends “ghost update” messages whenever the LOCAL ghosts move. These give the position, direction, speed, and mode of each ghost. Amongst other things, mode includes whether the ghost is in “FRIGHTEN” mode (having turned blue, and being edible). The remote computer also sends such ”ghost update” messages to our computer. Our model uses this information to update a local model of the REMOTE ghosts to determine if our pacman was either killed by one, or has eaten one.
+If our model detects that our AWAY pacman has eaten a REMOTE ghost (while it was in FRIGHTEN mode), it sends a “foreign pacman ate ghost” message to update the remote system.
+If our model detects that our AWAY pacman was killed by a REMOTE ghost, it sends a “foreign pacman died” message.
+If our model detects that our AWAY pacman has traversed the tunnel again, and is now LOCAL, it sends a “foreign pacman left” message. The remote side will stop displaying the pacman on its main screen (and display it again on the smaller remote screen if enabled).
+Some events require that our AWAY pacman be forcibly sent home. This happens when the level is completed on the remote screen, for example. The remote system sends a “pacman go home” message. Our system then resets our pacman to LOCAL, and sends a “foreign pacman left” message in reply.
+Whenever our pacman’s score changes, whether our pacman is LOCAL or AWAY, our system sends the remote system a “score update” message.
+The local game board also has the states STARTUP, CHASE, FRIGHTEN, GAME_OVER, NEXT_LEVEL_WAIT and READY_TO_RESTART, associated with it.
+Changes between these states are communicated using “status update” messages.
+Gameplay only happens in CHASE and FRIGHTEN state (the difference being whether a powerpill has recently been eaten). The software is in STARTUP state while playing the startup jingle.
+If either player loses their last life, the game ends. The losing player’s computer goes to GAME OVER state, and sends a status update message. The other side then also moves to GAME OVER state.
+From GAME OVER state, if the local player presses “r” to restart, the local computer goes to READY TO RESTART state and sends an update message. The game restarts when the second player also presses “r”, and sends a replying “READY TO RESTART” status update.
+When a level is cleared on a screen, that screen’s system goes to NEXT LEVEL WAIT while it plays the jingle and the player gets ready. Completing a level does not affect the level being played on the other screen, except the pacmen positions are reset.
+
+
+       𝓣𝓮𝓻𝓶𝓲𝓷𝓸𝓵𝓸𝓰𝔂
+꧁༺ ================ ༻꧂
+
+This specification uses the terms MUST, SHOULD, and MAY as defined in RFC 2119 [rfc2119]
+
+The pacman protocol runs over TCP, using a well known port of 5432.
+This communication protocol is used as it guarantees that the packets sent will all deliver sucessfully and be ordered correctly in the end.
+There are thirteen message types: MAZE_UPDATE, PACMAN_ARRIVED, PACMAN_LEFT, PACMAN_DIED, PACMAN_GO_HOME, PACMAN_UPDATE, GHOST_UPDATE, GHOST_WAS_EATEN, FOREIGN_PACMAN_ATE_GHOST, EAT, SCORE_UPDATE, LIVES_UPDATE and STATUS_UPDATE. 
+
+We use the following terminology to distinguish between visiting pacman and various game objects:
+• LOCAL: the game object is a local game object, and is currently on the local screen.
+• AWAY: our pacman is current away on the remote screen.
+• REMOTE: a game object on the remote screen that our AWAY pacman might interact with.
+• FOREIGN: the other player’s pacman, when it is visiting our screen.
+In this document, when these terms are capitalized, they have these specific meanings
+
+
+       𝓜𝓮𝓼𝓼𝓪𝓰𝓮 𝓒𝓸𝓷𝓽𝓮𝓷𝓽𝓼
+꧁༺ ===================== ༻꧂
+
+The contents of a MAZE_UPDATE message are:
+
+ - Type: MAZE_UPDATE
+
+- Value: An array containing elements representing each row in the maze. The contents of each element contains the cells of each row in the maze via ASCII characters.
+         '#', '/', \', '|' and '-' represent the walls, '.' for food, '*' represent the powerpills, ' ' for gaps and 'A' and 'B' represent tunnels.
+         This SHOULD be stored as a 2D array, with the element [0][0] being the top left, creating a coordinate system for the maze and the maze contents for each square could be mapped to the numbers 0-9 respectively.
+
+The contents of a PACMAN_ARRIVED message are:
+
+ - Type: PACMAN_ARRIVED
+Initialises the pacman on the remote maze
+
+- Position: x,y representing the coordinates of the pacman, where 0,0 represents the top left of the screen.
+             x can be from 0 to 650 however the maze itself is in the range 0 to 520 which is the theoretical scope of the pacman.
+             y can be from 0 to 800 however the maze itself is in the range 0 to 580 which is the theoretical scope of the pacman.
+
+ - Direction: The directions UP, DOWN, lEFT, RIGHT encoded to the numbers 1-4 respectively
+
+The contents of a PACMAN_LEFT message are:
+
+ - Type: PACMAN_LEFT
+
+- Value: Empty. Message only sent when our AWAY pacman has traversed the tunnel again and is now LOCAL.The remote side will stop displaying the pacman on its main screen.
+
+The contents of a PACMAN_DIED message are:
+
+ - Type: PACMAN_DIED
+
+- Value: Empty. Message only sent when our model detects that our AWAY pacman was killed by a REMOTE ghost.
+
+The contents of a PACMAN_GO_HOME message are:
+
+ - Type: PACMAN_GO_HOME
+
+- Value: Empty. Message only sent when some event requires that our AWAY pacman be forcibly sent back to the LOCAL screen.
+
+The contents of a PACMAN_UPDATE message are:
+
+ - Type: PACMAN_UPDATE
+
+ - Position: x,y representing the coordinates of the pacman, where 0,0 represents the top left of the screen.
+             x can be from 0 to 650 however the maze itself is in the range 0 to 520 which is the theoretical scope of the pacman.
+             y can be from 0 to 800 however the maze itself is in the range 0 to 580 which is the theoretical scope of the pacman.
+
+ - Direction: The directions UP, DOWN, lEFT, RIGHT encoded to the numbers 1-4 respectively
+
+ - Velocity: The speed of the pacman in the direction its facing in it's current position represented by an unsigned value in units per 20ms
+
+The contents of a GHOST_UPDATE message are:
+
+ - Type: GHOST_UPDATE
+
+-	Value: An integer value in the range 1 to 4, representing which ghost is being updated.
+
+  - Position: x,y representing the coordinates of the ghost, where 0,0 represents the top left of the screen.
+             x can be from 0 to 650 however the maze itself is in the range 0 to 520 which is the theoretical scope of the ghost.
+             y can be from 0 to 800 however the maze itself is in the range 0 to 580 which is the theoretical scope of the ghost.
+
+ - Direction: The directions UP, DOWN, lEFT, RIGHT encoded to the numbers 1-4 respectively
+
+ - Velocity: The speed of the ghost in the direction its facing in it's current position represented by an unsigned value in units per 20ms
+
+- Mode: Current state of the game encoded by a value in the range 1 to 6 incluse that maps the modes STARTUP, CHASE, FRIGHTEN, GAME_OVER, NEXT_LEVEL_WAIT and READY_TO_RESTART respectively.
+
+The contents of a GHOST_WAS_EATEN message are:
+
+ - Type: GHOST_WAS_EATEN
+
+-	Value: An integer value in the range 1 to 4, representing which ghost was eaten.
+
+The contents of a FOREIGN_PACMAN_ATE_GHOST message are:
+
+ - Type: FOREIGN_PACMAN_ATE_GHOST
+
+-	Value: An integer value in the range 1 to 4, representing which ghost was eaten.
+
+The contents of a EAT message are:
+
+ - Type: EAT
+
+- Value: Either a 0 or a 1, where 1 corresponds to where food or a powerpill has been eaten and 0 corresponds to when there hasn't.
+Using a copy of the maze the precence (or lack of) food or powerpills at the pacmans current location can be determined and therefore the value passed to this message.
+The maze can also be updated by the contents of that cell being removed as it is consumed by the pacman.
+-Value: A 1 is returned if this was on the LOCAL board and a 0 if on the REMOTE board of the sender.
+
+The contents of a SCORE_UPDATE message are:
+
+ - Type: SCORE_UPDATE
+
+- Value: An integer value in the range 0 to infinity. This upper limit of infinity is finite based on memory space for that value. This MAY be 32 bits.
+
+The contents of a LIVES_UPDATE message are:
+
+ - Type: LIVES_UPDATE
+
+- Value: An integer value in the range 0 to 5 representing the amount of lives remaining of the user's pacman.
+
+The contents of a STATUS_UPDATE message are:
+
+ - Type: STATUS_UPDATE
+
+- Value: Current state of the game encoded by a value in the range 1 to 6 incluse that maps the modes STARTUP, CHASE, FRIGHTEN, GAME_OVER, NEXT_LEVEL_WAIT and READY_TO_RESTART respectively.
+
+
+       𝓜𝓮𝓼𝓼𝓪𝓰𝓮 𝓣𝓲𝓶𝓲𝓷𝓰
+꧁༺ =================== ༻꧂
+
+The average reaction time of a human is 20ms. This should therefore be how often messages SHOULD be sent during gameplay (CHASE and FRIGHTEN state).
+More frequently than this is more (and maybe too) computationally demanding and less often is less smooth by a noticeable amount.
+50 FPS would have 1 message sent per frame. Maximum smoothness would have a message sent per frame so if 50 FPS cannot be maintained the rate of message transmission can be matched.
+Each message should contain MAZE_UPDATE, PACMAN_ARRIVED, PACMAN_UPDATE, GHOST_UPDATE, GHOST_WAS_EATEN, FOREIGN_PACMAN_ATE_GHOST and EAT.
+A message containing SCORE_UPDATE, LIVES_UPDATE and STATUS_UPDATE MUST also be sent. 
+The reason this is a separate message is because this is information that does not need to be transferred as frequently and SHOULD be sent every 250ms.
+Messages countaining PACMAN_DIED, PACMAN_LEFT or PACMAN_GO_HOME SHOULD only be sent whenever conditions satisfy.
+
+
+       𝓜𝓮𝓼𝓼𝓪𝓰𝓮 𝓔𝓷𝓬𝓸𝓭𝓲𝓷𝓰
+꧁༺ ===================== ༻꧂
+
+Messages are fixed format, follow a text-based protocol and separated by a newline character.  CR characters MUST NOT be sent.  
+More than one message MAY be send consecutively in a single packet - this may be useful to reduce overhead.
+ASCII encoding is used due to its readability and ease of implementation and correction.
+
+INIT message format
+-------------------
+
+INIT messages are of variable length, encoded as follows:
+
+INIT: password=<password><newline>
+
+"INIT" MUST be capitalized, and MUST be at the start of the connection or immediately follow a newline character.  
+The fields MUST be separated by a single space character.  The fields can be in any order, and the protocol MUST ignore any unknown fields.
+
+<password> is the data being sent for the password exchange to establish connnection via the handshake protocol.
+
+MAZE_UPDATE message format
+--------------------------
+MAZE_UPDATE messages are encoded as follows:
+
+MAZE_UPDATE: maze=<maze><newline> 
+
+“MAZE_UPDATE” MUST be capitalized, and MUST immediately follow a newline character. The fields MUST be separated by a single space character and the protocol MUST ignore any unknown fields. 
+
+<maze> is an array of ASCII characters which represent the maze. Each element is a row and each value in each element is a cell in the row of that maze.
+The array must start with a '[', end with a ']' and have its elements contained in "double quotes",separated by commas,only contain numbers in the range 0 to 9 and be 84 characters long.
+
+PACMAN_ARRIVED message format
+-----------------------------
+PACMAN_ARRIVED messages are of variable length encoded as follows:
+
+PACMAN_ARRIVED: Xcoordinate=<pacman_x_pos> Ycoordinate=<pacman_y_pos> Direction=<Direction><newline>
+
+“PACMAN_ARRIVED” MUST be capitalized, and MUST immediately follow a newline character. The fields MUST be separated by a single space character and the protocol MUST ignore any unknown fields. 
+
+<pacman_x_pos> is a decimal ASCII encoded value of the pacmans x coordinate. It must be in the range 20 to 520
+<pacman_y_pos> is a decimal ASCII encoded value of the pacmans y coordinate. It must be in the range 20 to 580
+<Direction> is a decimal ASCII encoded value of the pacmans direction. It must be in the range 1 to 4
+
+PACMAN_LEFT message format
+----------------------------------
+PACMAN_LEFT messages are encoded as follows:
+
+PACMAN_LEFT: <newline> 
+
+“PACMAN_LEFT” MUST be capitalized, and MUST immediately follow a newline character. The fields MUST be separated by a single space character and the protocol MUST ignore any unknown fields. 
+
+
+PACMAN_DIED message format
+--------------------------
+PACMAN_DIED messages are encoded as follows:
+
+PACMAN_DIED: <newline> 
+
+“PACMAN_DIED” MUST be capitalized, and MUST immediately follow a newline character. The fields MUST be separated by a single space character and the protocol MUST ignore any unknown fields. 
+
+
+PACMAN_GO_HOME message format
+-----------------------------
+PACMAN_GO_HOME messages are encoded as follows:
+
+PACMAN_GO_HOME: <newline> 
+
+“PACMAN_GO_HOME” MUST be capitalized, and MUST immediately follow a newline character. The fields MUST be separated by a single space character and the protocol MUST ignore any unknown fields. 
+
+
+PACMAN_UPDATE message format
+----------------------------
+PACMAN_UPDATE messages are of variable length encoded as follows:
+
+PACMAN_UPDATE: Xcoordinate=<pacman_x_pos> Ycoordinate=<pacman_y_pos> Direction=<Direction> Speed=<Speed><newline>
+
+“PACMAN_UPDATE” MUST be capitalized, and MUST immediately follow a newline character. The fields MUST be separated by a single space character and the protocol MUST ignore any unknown fields. 
+
+<pacman_x_pos> is a decimal ASCII encoded value of the pacmans x coordinate. It must be in the range 20 to 520
+<pacman_y_pos> is a decimal ASCII encoded value of the pacmans y coordinate. It must be in the range 20 to 580
+<Direction> is a decimal ASCII encoded value of the pacmans direction. It must be in the range 1 to 4
+<Speed> is a decimal ASCII encoded value of the pacmans speed.
+
+GHOST_UPDATE message format
+---------------------------
+GHOST_UPDATE messages are of variable length encoded as follows:
+
+GHOST_UPDATE: GhostID=<ghost_number> Xcoordinate=<ghost_x_pos> Ycoordinate=<ghost_y_pos> Direction=<Direction> Speed=<Speed>  Mode=<Mode><newline>
+
+“GHOST_UPDATE” MUST be capitalized, and MUST immediately follow a newline character. The fields MUST be separated by a single space character and the protocol MUST ignore any unknown fields. 
+
+<ghost_number> is a decimal ASCII encoded value releating to each ghost. It must be in the range 1 to 4
+<ghost_x_pos> is a decimal ASCII encoded value of the ghosts x coordinate. It must be in the range 20 to 520
+<ghost_y_pos> is a decimal ASCII encoded value of the ghosts y coordinate. It must be in the range 20 to 580
+<Direction> is a decimal ASCII encoded value of the ghosts direction. It must be in the range 1 to 4
+<Speed> is a decimal ASCII encoded value of the ghosts speed.
+<Mode> is a decimal ASCII encoded value of the ghosts state. It must be in the range 1 to 6
+
+GHOST_WAS_EATEN message format
+------------------------------
+GHOST_WAS_EATEN messages are encoded as follows:
+
+GHOST_WAS_EATEN: GhostID=<ghost_number><newline> 
+
+“GHOST_WAS_EATEN” MUST be capitalized, and MUST immediately follow a newline character. The fields MUST be separated by a single space character and the protocol MUST ignore any unknown fields. 
+
+<ghost_number> is a decimal ASCII encoded value relating to each ghost. It must be in the range 1 to 4. 
+
+FOREIGN_PACMAN_ATE_GHOST message format
+------------------------------
+FOREIGN_PACMAN_ATE_GHOST messages are encoded as follows:
+
+FOREIGN_PACMAN_ATE_GHOST: GhostID=<ghost_number><newline> 
+
+FOREIGN_PACMAN_ATE_GHOST MUST be capitalized, and MUST immediately follow a newline character. The fields MUST be separated by a single space character and the protocol MUST ignore any unknown fields. 
+
+<ghost_number> is a decimal ASCII encoded value relating to each ghost. It must be in the range 1 to 4. 
+
+EAT message format
+------------------
+EAT messages are of variable length encoded as follows:
+
+EAT: Consumed=<consumed> Location=<location><newline>
+
+“EAT” MUST be capitalized, and MUST immediately follow a newline character. The fields MUST be separated by a single space character and the protocol MUST ignore any unknown fields. 
+
+<consumed> is a decimal ASCII encoded value indicating if  food or powerpills have been eaten at the pacmans current location .It must be 1 or 0.
+<location> is a decimal ASCII encoded value indicating which board, the LOCAL or REMOTE, the food or powerpills were consumed .It must be 1 or 0.
+
+SCORE_UPDATE message format
+---------------------------
+SCORE_UPDATE messages are of variable length encoded as follows:
+
+SCORE_UPDATE: Score=<score><newline>
+
+“SCORE_UPDATE" MUST be capitalized, and MUST be at the start of the connection or immediately follow a newline character. The fields MUST be separated by a single space character and the protocol MUST ignore any unknown fields. 
+
+<score> is a decimal ASCII encoded value represening the current score in the game.
+
+LIVES_UPDATE message format
+---------------------------
+LIVES_UPDATE messages are of variable length encoded as follows:
+
+LIVES_UPDATE: Lives=<lives><newline>
+
+“LIVES_UPDATE" MUST be capitalized, and MUST be at the start of the connection or immediately follow a newline character. The fields MUST be separated by a single space character and the protocol MUST ignore any unknown fields. 
+
+<lives> is a decimal ASCII encoded value of the amount of lives remaining of the user's pacman. It must be in the range 0 to 5
+
+STATUS_UPDATE message format
+----------------------------
+STATUS_UPDATE messages are of encoded as follows:
+
+STATUS_UPDATE: Mode=<Mode><newline>
+
+“STATUS_UPDATE” MUST be capitalized, and MUST immediately follow a newline character. The fields MUST be separated by a single space character and the protocol MUST ignore any unknown fields. 
+
+<Mode> is a decimal ASCII encoded value of the gameplays state. It must be in the range 1 to 6
+
+
+ ABNF Grammar
+==============
+
+connection =        1*(msg newline)
+msg =               maze_update | pacman_arrived | pacman_left | pacman_died | pacman_go_home | pacman_update | ghost_update | ghost_was_eaten | foreign_pacman_ate_ghost | eat | score_update | lives_update | status_update
+init_msg =          "INIT:" space init_field 1*(space init_field)
+init_field =        "password=" string
+maze_update =       “MAZE_UPDATE:" space maze_field
+maze_field =        "maze=" integer
+pacman_arrived =    “PACMAN_ARRIVED:" space xpos_field space ypos_field space direction_field
+xpos_field =        "Xcoordinate=" integer
+ypos_field =        "Ycoordinate=" integer
+direct_field =      "Direction=" integer
+pacman_left =   	“PACMAN_LEFT"
+pacman_died =   	“PACMAN_DIED"
+pacman_go_home =   	“PACMAN_GO_HOME"
+pacman_update =     “PACMAN_UPDATE:" space pac_xpos_field space pac_ypos_field space pac_direction_field space pac_speed_field
+pac_xpos_field =    "Xcoordinate=" integer
+pac_ypos_field =    "Ycoordinate=" integer
+pac_direct_field =  "Direction=" integer
+pac_speed_field =   "Speed=" integer
+ghost_update =      “GHOST_UPDATE:" space ghostnum_field space gho_xpos_field space gho_ypos_field space gho_direction_field space gho_speed_field space mode_field
+ghostnum_field =    "GhostID=" integer
+gho_xpos_field =    "Xcoordinate=" integer
+gho_ypos_field =    "Ycoordinate=" integer
+gho_direct_field =  "Direction=" integer
+gho_speed_field =   "Speed=" integer
+mode_field =        "Mode=" integer
+ghost_was_eaten =   "GHOST_WAS_EATEN:" space ghost_eat_field
+ghost_eat_field=    "GhostID=" integer
+foreign_pacman_ate_ghost = "FOREIGN_PACMAN_ATE_GHOST:" space paceat_ghostnum_field
+pac_eat_field =     "GhostID=" integer
+eat =               "EAT:" space eaten_field space whichboard_field
+eaten_field =       "Consumed=" integer
+whichboard_field =  "Location=" integer
+score_update =      "SCORE_UPDATE:" space score_field
+score_field =       "Score=" integer
+lives_update =      "LIVES_UPDATE:" space lives_field
+lives_field =       "Lives=" integer
+status_update =     "STATUS_UPDATE:" space status_field
+status_field =      "Mode=" integer
+
+integer =             	POS-DIGIT *(DIGIT)
+string =       	        *CHAR
+DIGIT =               	"0" | POS-DIGIT
+POS-DIGIT =          	 "1"|"2"|"3"|"4"|"5"|"6"|"7"|"8"|"9"
+space =               	%d32
+newline =           	 %d10
+CHAR =               	 %x01-7F
